@@ -4,16 +4,57 @@ No Linux: `kernel.img` boots directly from the Raspberry Pi firmware, starts a
 PowerPC emulator (SheepShaver core, kpx_cpu interpreter) and boots
 Mac OS 9.0.4. Video goes out over mini-HDMI.
 
-## Ready-made image
+## What you need (not included)
 
-`out/macos9rpi.img` — write it straight to an SD card (Raspberry Pi Imager →
-"Use custom", or balenaEtcher). **An SD card of at least 16 GB** is required
-(the image is 8.1 GB).
+This repository contains no Apple software. You need to supply two files
+yourself; both are copyrighted by Apple, so please don't open issues or pull
+requests asking for them or containing them.
+
+### 1. A Mac ROM file
+
+One of:
+
+- **New World "Mac OS ROM" file** (recommended; this is what the project is
+  tested with). It's the ~2 MB file called `Mac OS ROM` in the System Folder
+  of a Mac OS 8.6–9.0.4 install CD or of a New World Mac (iMac, blue-and-white
+  G3, …). It's a text-headed file that starts with `<CHRP-BOOT>` and
+  `MacROM for NewWorld`. The version often found as `newworld86.rom` works.
+  Use a ROM file from Mac OS 9.0.4 or earlier; newer ones are untested.
+- **4 MB Old World ROM dump** from a PCI Power Mac you own (e.g. Power Mac
+  7500/8500/9500 or a beige G3). SheepShaver recognises TNT, Alchemy,
+  Zanzibar, Gazelle and Gossamer ROMs. Not yet tested on the Pi.
+
+The ROM goes on the SD card's FAT partition as `Mac OS ROM`
+(`ROM=yourfile scripts/make_image.sh` does this), or set the `rom` line in
+`macos9rpi.txt` to a different name.
+
+### 2. A Mac OS 9 disk image
+
+- **System:** Mac OS 9.0.4 or earlier installed (tested with 9.0.4).
+  SheepShaver can't run Mac OS 9.1 or later.
+- **Format:** an uncompressed, raw image of an HFS or HFS+ volume. This is the
+  format SheepShaver and Basilisk II create (`.dsk`, `.hfv`, `.img`). Images
+  with an Apple partition map are detected too. Compressed or encoded images
+  (Disk Copy compressed `.img`, `.dmg`, StuffIt) must first be converted to a
+  read/write raw image.
+- **Size:** in partition 2 of the SD card any size works, as long as the card is
+  larger than the image + 256 MB. As a file on the FAT partition (`disk
+  name.dsk`) the limit is 4 GB. Tested with an 8 GB HFS+ volume.
+- **Easiest way to make one:** install Mac OS 9.0.4 in SheepShaver on a
+  desktop computer from an install CD, then use that disk image.
+
+## SD card image
+
+`scripts/make_image.sh` builds `out/macos9rpi.img` from your ROM and disk
+image (see *Building*). Write it straight to an SD card (Raspberry Pi
+Imager → "Use custom", or balenaEtcher). With the 8 GB test disk the image is
+8.1 GB, so a **16 GB SD card** is needed. In general the card must be larger
+than your disk image + 256 MB.
 
 | Partition | Contents |
 |-----------|----------|
 | 1 — FAT32 (256 MB, "MACOS9RPI") | firmware, `kernel.img`, `config.txt`, `cmdline.txt`, `macos9rpi.txt` (settings), `Mac OS ROM` |
-| 2 — raw (type 0xAF) | exact copy of `OS9.dsk` (HFS+ "System 9") |
+| 2 — raw (type 0xAF) | your Mac disk image, copied byte for byte |
 
 The FAT partition is readable on any computer, so you can change the settings
 from there.
@@ -63,9 +104,6 @@ reporting problems.
 
 ## Speed tips
 
-- **Reduce extensions:** hold Shift at boot ("Extensions Off"), or choose the
-  "Mac OS 9.0.4 Base" set in Extensions Manager. This disk has ~150
-  extensions; they are what slows booting down the most.
 - Use a plain pattern instead of a desktop picture, and turn off After
   Dark/Launcher/Control Strip.
 - Remove the `#` in front of the overclock lines in `config.txt`.
@@ -92,7 +130,8 @@ the small changes made to upstream are in `patches/`.
 
 Not in this repository: `tools/` (toolchain), `external/` (upstream sources),
 the Mac OS disk (`OS9.dsk`) and the Mac ROM. The disk and ROM are copyrighted
-and not distributed; put your own copies in the project root.
+and not distributed; put your own copies in the project root (see
+*What you need*).
 
 ```
 # Toolchain: developer.arm.com → Arm GNU Toolchain 14.3.rel1,
