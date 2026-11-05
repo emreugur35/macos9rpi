@@ -25,6 +25,20 @@ Files: macos9rpi.nvram stores the Mac PRAM (delete it to zap PRAM).
        macos9rpi.log has the start messages (self test, speed) and, after a
        clean shutdown, translator statistics.
 
+Network (Wi-Fi)
+---------------
+Mac OS can use the Pi Zero W's Wi-Fi as its Ethernet:
+  1. Put your network name, password and country into wpa_supplicant.conf
+     (on this partition).
+  2. In macos9rpi.txt, remove the # in front of "ether wlan".
+  3. In Mac OS, open the TCP/IP control panel: Connect via
+     "Ethernet built-in", Configure "Using DHCP Server".
+Mac OS then gets its own address from your router, like any other computer
+on your network; AppleTalk works too. The Wi-Fi firmware is in /firmware.
+WPA2-Personal and open networks work, WPA3-only networks do not.
+Instead of Wi-Fi, "ether usb" uses a USB Ethernet adapter.
+macos9rpi.log shows whether the Wi-Fi connected (after a clean shutdown).
+
 Speed
 -----
 The PowerPC code is translated to ARM code while it runs ("jit true" in

@@ -36,6 +36,14 @@ mousespeed 100
 # set this to false to use the (slow) interpreter.
 jit true
 
+# Network: Mac OS's Ethernet ("Ethernet built-in") is connected to
+#   wlan = the Pi Zero W's Wi-Fi; set network name and password in
+#          wpa_supplicant.conf on this partition
+#   usb  = a USB Ethernet adapter (plugged in before switching on)
+# Mac OS then gets its own address from your router (TCP/IP control panel:
+# Connect via "Ethernet built-in", Configure "Using DHCP Server").
+#ether wlan
+
 # Keyboard: false = Alt is Command, Windows key is Option (like a Mac
 # keyboard layout); true = swapped
 swap_opt_cmd false

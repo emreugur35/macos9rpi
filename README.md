@@ -53,7 +53,7 @@ than your disk image + 256 MB.
 
 | Partition | Contents |
 |-----------|----------|
-| 1 — FAT32 (256 MB, "MACOS9RPI") | firmware, `kernel.img`, `config.txt`, `cmdline.txt`, `macos9rpi.txt` (settings), `Mac OS ROM` |
+| 1 — FAT32 (256 MB, "MACOS9RPI") | Pi boot firmware, `kernel.img`, `config.txt`, `cmdline.txt`, `macos9rpi.txt` (settings), `Mac OS ROM`, `wpa_supplicant.conf` (Wi-Fi settings), `firmware/` (Wi-Fi firmware) |
 | 2 — raw (type 0xAF) | your Mac disk image, copied byte for byte |
 
 The FAT partition is readable on any computer, so you can change the settings
@@ -61,7 +61,7 @@ from there.
 
 ## Hardware
 
-- Raspberry Pi Zero / Zero W (BCM2835)
+- Raspberry Pi Zero / Zero W (BCM2835); Wi-Fi needs the Zero W
 - mini-HDMI → HDMI cable
 - USB OTG adapter + USB hub, keyboard and mouse
 - a good 5V power supply
@@ -78,6 +78,7 @@ disk sd:p2            # Mac disk: partition 2 of the SD card (or a ≤4 GB image
 ramsize 128           # Mac RAM (MB)
 screen 800x600        # resolution (256 colors; the GPU scales it to the monitor)
 jit true              # PowerPC→ARM translator (JIT); false = interpreter
+#ether wlan           # network: wlan (Wi-Fi) or usb (USB Ethernet adapter)
 ```
 
 ### JIT (PowerPC → ARM translator)
@@ -102,6 +103,47 @@ instruction mix (slow).
 measurement) and, after a clean shutdown, JIT statistics; it is useful when
 reporting problems.
 
+### Network (Wi-Fi bridge)
+
+> **Status: new, not yet tested on a real Pi Zero W.** The Mac side (Open
+> Transport, DHCP, full-size frames) is tested in QEMU over a USB network
+> adapter; the Wi-Fi connection itself can only be tested on real hardware.
+> Reports are very welcome (see *Contributing*).
+
+With `ether wlan`, Mac OS's built-in Ethernet is bridged to the Pi Zero W's
+Wi-Fi. Mac OS gets its own IP address from your router by DHCP and appears on
+the network like any other computer, so TCP/IP and AppleTalk should both work.
+
+1. Put your network name, password and country code into
+   `wpa_supplicant.conf` on the SD card's FAT partition. Alternatively,
+   build the image with `WIFI_SSID=… WIFI_PASSWORD=… WIFI_COUNTRY=TR
+   scripts/make_image.sh`, which writes the file (password stored hashed) and
+   turns `ether wlan` on.
+2. Set `ether wlan` in `macos9rpi.txt`.
+3. In Mac OS, open the TCP/IP control panel: Connect via
+   "Ethernet built-in", Configure "Using DHCP Server".
+
+How it works: a Wi-Fi client may only send frames with its own MAC address,
+so Mac OS simply uses the Wi-Fi chip's MAC address. No Linux and no
+Circle TCP/IP stack run underneath, so every frame goes straight between the
+radio and Mac OS. Circle's WLAN driver and its port of wpa_supplicant handle
+the connection; WPA key-handshake frames are passed to wpa_supplicant and
+everything else goes to Mac OS.
+
+- WPA2-Personal (or WPA/WPA2 mixed) and open networks work; WPA3-only
+  networks don't.
+- The Wi-Fi firmware (`brcmfmac43430-sdio.*`) goes in `/firmware` on the SD
+  card. `make_image.sh` downloads it with `scripts/get_wlan_firmware.sh`.
+- `ether usb` uses a USB Ethernet adapter instead (SMSC951x, LAN7800 or CDC
+  Ethernet; plug it in before switching on).
+- Wi-Fi start-up messages ("Wi-Fi: ready, MAC …") appear on screen before
+  Mac OS starts; `macos9rpi.log` also has the later ones ("Wi-Fi: connected")
+  after a clean shutdown. `etherdebug true` additionally logs the first
+  frames and packet counters.
+- Expect modest speed: the emulator and the network share one CPU core.
+- Mac OS 9's browsers can't open most modern HTTPS websites; plain HTTP,
+  FTP and AppleShare/AFP file sharing are the useful things here.
+
 ## Speed tips
 
 - Use a plain pattern instead of a desktop picture, and turn off After
@@ -116,9 +158,26 @@ reporting problems.
 source env.sh
 make -j8                                   # build/rpi1/kernel.img
 ROM=newworld86.rom scripts/make_image.sh   # out/macos9rpi.img (DISK=OS9.dsk by default)
+WIFI_SSID=name WIFI_PASSWORD=pw WIFI_COUNTRY=TR ROM=newworld86.rom scripts/make_image.sh   # with Wi-Fi
 QEMU=1 ROM=newworld86.rom scripts/make_image.sh
 scripts/run_qemu.sh out/qemu-sd.img        # test in QEMU raspi0
 python3 scripts/screenshot.py out/qemu-monitor.sock shot.png
+```
+
+`make_image.sh` downloads the Wi-Fi firmware once
+(`scripts/get_wlan_firmware.sh`, into `firmware/wlan/`, not committed).
+
+Network test in QEMU: QEMU has no Wi-Fi chip, so the Mac side is tested over
+QEMU's USB network adapter (`ether usb`). Receiving needs a QEMU with Circle's
+one-line USB fix, built by `scripts/build_qemu_circle.sh` into
+`tools/qemu-circle/`. `scripts/netpeer.py` then acts as a tiny LAN (DHCP
+server, ARP) and pings Mac OS with small and full-size packets:
+
+```
+python3 scripts/netpeer.py &
+scripts/fresh_qemu.sh "ether usb" "etherdebug true"
+QEMU_BIN=tools/qemu-circle/bin/qemu-system-arm scripts/run_qemu.sh out/qemu-sd.img \
+  -device usb-net,netdev=n0 -netdev dgram,id=n0,local.type=inet,local.host=127.0.0.1,local.port=10110,remote.type=inet,remote.host=127.0.0.1,remote.port=10111
 ```
 
 Dependencies: Arm GNU Toolchain 14.3 (arm-none-eabi) under `tools/`;
@@ -170,25 +229,37 @@ make -j8
   translated to ARM code and chained together, PowerPC registers are kept in
   ARM registers within a block, untranslated instructions call the
   interpreter's handler; boot-time self test against the interpreter.
+- `src/ether_circle.cpp` — SheepShaver's Ethernet driver backend: passes
+  Mac OS's frames to and from `rpi_net.cpp`.
+- `src/rpi_net.cpp` — the network device: Circle's WLAN driver and
+  wpa_supplicant (Wi-Fi) or a USB Ethernet adapter. Splits off WPA handshake
+  frames for wpa_supplicant (replaces hostap's `l2_packet`) and runs the
+  network tasks from the emulator's 60 Hz and idle hooks.
 - `src/ppc_selftest.cpp` — boot-time PowerPC interpreter self test + MIPS
   measurement.
 
 ## Limitations
 
 - Up to Mac OS 9.0.4 (SheepShaver does not emulate the MMU).
-- 256 colors; no sound or networking (first version).
+- 256 colors; no sound.
+- Wi-Fi networking hasn't been tested on a real Pi yet. QEMU has no Wi-Fi
+  chip, so only the Mac side has been tested (over QEMU's USB network
+  adapter). WPA3-only networks are not supported.
+- USB Ethernet adapters must be plugged in before switching on.
 - In QEMU, USB mouse movement does not reach Circle (known QEMU/Circle
   limitation; buttons and keyboard work). This is not a problem on real
   hardware.
 
 ## Contributing
 
-Contributions are welcome! Bug reports, test results on real hardware, fixes
-and new features (sound, networking, more colors, speed) are all appreciated.
-Please open an issue or a pull request.
+Contributions are welcome! Bug reports, test results on real hardware
+(especially Wi-Fi), fixes and new features (sound, more colors, speed) are
+all appreciated. Please open an issue or a pull request.
 
 - When reporting a problem, attach `macos9rpi.log` from the SD card's FAT
-  partition and say which Pi, ROM and Mac OS version you used.
+  partition and say which Pi, ROM and Mac OS version you used. For network
+  problems, set `etherdebug true` first, and remove your Wi-Fi password from
+  anything you post.
 - If you can, test changes in QEMU (`scripts/run_qemu.sh`) and on a real Pi.
 - Changes to Circle or SheepShaver go into `patches/` as an updated diff
   against the pinned commits.

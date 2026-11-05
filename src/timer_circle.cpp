@@ -143,9 +143,15 @@ void Delay_usec(uint64 usec)
  *  interrupt (60Hz tick, USB) which saves power and lets the Pi run cooler.
  */
 
+extern void EtherCirclePoll(void);
+
 void idle_wait(void)
 {
 	asm volatile ("mcr p15, 0, %0, c7, c0, 4" : : "r" (0));	// ARMv6 wait for interrupt
+
+	// Woken up, maybe by the network: deliver frames without waiting for the
+	// next 60 Hz tick (keeps network latency low while Mac OS waits for data)
+	EtherCirclePoll();
 }
 
 

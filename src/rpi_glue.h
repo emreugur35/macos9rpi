@@ -99,6 +99,32 @@ void rpi_usb_poll(void);
 int rpi_have_keyboard(void);
 int rpi_have_mouse(void);
 
+/* ---- Network (Mac Ethernet bridged to Wi-Fi or a USB Ethernet adapter) ---- */
+
+// Start the network device. mode: "wlan" (on-board Wi-Fi, WPA2 via
+// wpa_supplicant.conf) or "usb" (USB Ethernet adapter / QEMU usb-net).
+// Returns 0 on success. Called once from the emulator thread.
+int rpi_net_init(const char *mode);
+// Hardware address the Mac should use (the device's own MAC, so frames can
+// be bridged 1:1 even over Wi-Fi). Returns 0 if no device (yet).
+int rpi_net_get_mac(uint8_t mac[6]);
+// Let the network tasks run and collect received frames.
+// Returns the number of frames waiting for the Mac.
+unsigned rpi_net_poll(void);
+// Fetch the next received frame into buf (at least 1514 bytes).
+// Returns its length, or 0 if none.
+unsigned rpi_net_receive(void *buf);
+// Send one Ethernet frame (with header). Returns 0 on success.
+int rpi_net_send(const void *frame, unsigned len);
+// Multicast filter: count addresses of 6 bytes each
+void rpi_net_set_multicast(const uint8_t *addrs, unsigned count);
+// Is the link up (Wi-Fi associated and authenticated)?
+int rpi_net_link_up(void);
+// Frame counters to the log (at shutdown)
+void rpi_net_log_stats(void);
+// Log poll/frame counters every 5 s ("etherdebug true")
+void rpi_net_set_debug(int on);
+
 /* ---- Power ---------------------------------------------------------------- */
 
 void rpi_halt(void) __attribute__((noreturn));

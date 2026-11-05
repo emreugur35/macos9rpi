@@ -13,6 +13,9 @@
 #   OUT=path       output image (default: out/macos9rpi.img)
 #   BOOT_MB=n      size of the FAT partition in MB (default 256)
 #   QEMU=1         also create out/qemu-sd.img (size padded to a power of 2)
+#   WIFI_SSID=name      Wi-Fi network: writes wpa_supplicant.conf and turns
+#   WIFI_PASSWORD=pw    on "ether wlan" (no password = open network;
+#   WIFI_COUNTRY=XX     the password is stored hashed, country default US)
 #
 set -euo pipefail
 
@@ -75,8 +78,50 @@ done
 MC "$KERNEL" ::/kernel.img
 MC "$TEMPLATE/config.txt" ::/
 MC "$TEMPLATE/cmdline.txt" ::/
-MC "$TEMPLATE/macos9rpi.txt" ::/
 MC "$TEMPLATE/README.txt" ::/
+
+# Wi-Fi firmware for "ether wlan" (downloaded once into firmware/wlan/)
+WLAN_FW="$FW/wlan"
+if [ ! -f "$WLAN_FW/brcmfmac43430-sdio.bin" ]; then
+	"$ROOT/scripts/get_wlan_firmware.sh" || echo "WARNING: no Wi-Fi firmware, Wi-Fi will not work" >&2
+fi
+if [ -f "$WLAN_FW/brcmfmac43430-sdio.bin" ]; then
+	mmd -i "$IMG" ::/firmware
+	for f in "$WLAN_FW"/brcmfmac43430-sdio.*; do
+		MC "$f" ::/firmware/
+	done
+fi
+
+# Settings and Wi-Fi configuration
+TMPD="$(mktemp -d)"
+trap 'rm -rf "$TMPD"' EXIT
+cp "$TEMPLATE/macos9rpi.txt" "$TMPD/macos9rpi.txt"
+if [ -n "${WIFI_SSID:-}" ]; then
+	python3 -I - "$TMPD/wpa_supplicant.conf" <<'EOF'
+import hashlib, os, sys
+ssid = os.environ['WIFI_SSID']
+pw = os.environ.get('WIFI_PASSWORD', '')
+country = os.environ.get('WIFI_COUNTRY', 'US').upper()
+safe = all(32 <= ord(c) < 127 and c != '"' for c in ssid)
+ssid_line = 'ssid="%s"' % ssid if safe else 'ssid=' + ssid.encode().hex()
+lines = ['# Written by make_image.sh', 'country=' + country, '', 'network={', '\t' + ssid_line]
+if pw:
+    if not 8 <= len(pw) <= 63:
+        sys.exit('WIFI_PASSWORD must be 8..63 characters')
+    psk = hashlib.pbkdf2_hmac('sha1', pw.encode(), ssid.encode(), 4096, 32).hex()
+    lines += ['\t# password, hashed with the network name', '\tpsk=' + psk, '\tkey_mgmt=WPA-PSK']
+else:
+    lines += ['\tkey_mgmt=NONE']
+lines += ['\tscan_ssid=1', '}', '']
+open(sys.argv[1], 'w').write('\n'.join(lines))
+EOF
+	printf '\n# Added by make_image.sh (WIFI_SSID)\nether wlan\n' >> "$TMPD/macos9rpi.txt"
+	echo "Wi-Fi: network \"$WIFI_SSID\", \"ether wlan\" enabled"
+else
+	cp "$TEMPLATE/wpa_supplicant.conf" "$TMPD/wpa_supplicant.conf"
+fi
+MC "$TMPD/macos9rpi.txt" ::/
+MC "$TMPD/wpa_supplicant.conf" ::/
 if [ -n "$ROM" ]; then
 	MC "$ROM" "::/Mac OS ROM"
 	echo "Added ROM: $ROM"

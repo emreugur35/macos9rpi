@@ -319,6 +319,7 @@ static void tick_func(void)
  */
 
 static void handle_input_events(void);
+extern void EtherCirclePoll(void);	// ether_circle.cpp
 
 void CirclePollEvents(void)
 {
@@ -375,6 +376,9 @@ void CirclePollEvents(void)
 		last_tick = now;
 		handle_input_events();
 	}
+
+	// Network (Wi-Fi / USB Ethernet): let its tasks run, collect frames
+	EtherCirclePoll();
 #if INPUT_DEBUG && 0		// (needs the declarations below)
 	if (now - dbg_reported >= 120) {
 		static unsigned last_reports = 0;

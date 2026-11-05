@@ -41,14 +41,15 @@ KPX_SRCS := \
 	kpx_cpu/ppc-dis.c
 
 DUMMY_SRCS := \
-	dummy/audio_dummy.cpp dummy/ether_dummy.cpp dummy/serial_dummy.cpp \
+	dummy/audio_dummy.cpp dummy/serial_dummy.cpp \
 	dummy/scsi_dummy.cpp dummy/clip_dummy.cpp
 
 PORT_SRCS := \
 	main_circle.cpp sys_circle.cpp video_circle.cpp timer_circle.cpp \
 	xpram_circle.cpp prefs_circle.cpp user_strings_circle.cpp \
 	vm_alloc_circle.cpp extfs_stub.cpp ppc_selftest.cpp rpi_fastmem.c \
-	rpi_kernel.cpp rpi_mmu.cpp rpi_abort_stub.S ppc_armjit.cpp
+	rpi_kernel.cpp rpi_mmu.cpp rpi_abort_stub.S ppc_armjit.cpp \
+	ether_circle.cpp rpi_net.cpp
 
 UPSTREAM_SRCS := $(SS_SRCS) $(KPX_SRCS) $(DUMMY_SRCS)
 ALL_SRCS := $(UPSTREAM_SRCS) $(PORT_SRCS)
@@ -63,7 +64,10 @@ vpath %.S   $(PORT)
 include $(CIRCLEHOME)/Rules.mk
 
 INCLUDE := $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE)
-LIBS	:= $(CIRCLE_STDLIB_LIBS)
+# Wi-Fi: Circle's WLAN driver + wpa_supplicant (rpi_net.cpp replaces its l2_packet)
+WLAN_LIBS := $(CIRCLEHOME)/addon/wlan/hostap/wpa_supplicant/libwpa_supplicant.a \
+	     $(CIRCLEHOME)/addon/wlan/libwlan.a
+LIBS	:= $(WLAN_LIBS) $(CIRCLE_STDLIB_LIBS)
 
 EMU_INCLUDE := -I$(PORT) -I$(SS)/include -I$(SS)/kpx_cpu/include -I$(SS)/kpx_cpu/src \
 	       -I$(SS)/kpx_cpu -I$(B2)/include

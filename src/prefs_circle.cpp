@@ -31,8 +31,9 @@ prefs_desc platform_prefs_items[] = {
 	{"jittest", TYPE_INT32, false,         "JIT self test iterations per instruction form (default 20)"},
 	{"jitprofile", TYPE_BOOLEAN, false,    "count executed PowerPC instructions (slow, log only)"},
 	{"jitsample", TYPE_BOOLEAN, false,     "log where the time goes (60 Hz samples, log only)"},
-	{"ether", TYPE_STRING, false,          "unused"},
+	{"ether", TYPE_STRING, false,          "network: wlan (Wi-Fi) or usb (USB Ethernet adapter)"},
 	{"etherconfig", TYPE_STRING, false,    "unused"},
+	{"etherdebug", TYPE_BOOLEAN, false,    "log the first network frames"},
 	{"keycodes", TYPE_BOOLEAN, false,      "unused"},
 	{"keycodefile", TYPE_STRING, false,    "unused"},
 	{"mousewheelmode", TYPE_INT32, false,  "unused"},
@@ -196,7 +197,7 @@ void AddPlatformPrefsDefaults(void)
 	PrefsReplaceInt32("ramsize", 128 * 1024 * 1024);
 	PrefsReplaceBool("swap_opt_cmd", false);	// Alt = Command, Windows key = Option
 	PrefsReplaceBool("nosound", true);
-	PrefsReplaceBool("nonet", true);
+	PrefsReplaceBool("nonet", false);	// network is off unless "ether wlan/usb"
 	PrefsReplaceBool("ignoresegv", true);
 	PrefsReplaceBool("ignoreillegal", true);
 	PrefsReplaceBool("jit", true);		// ARMv6 translator (ppc_armjit.cpp)
@@ -207,6 +208,7 @@ void AddPlatformPrefsDefaults(void)
 	PrefsAddInt32("diskcache", 32);
 	PrefsAddBool("profile", false);
 	PrefsAddInt32("mousespeed", 100);
+	PrefsAddBool("etherdebug", false);
 }
 
 

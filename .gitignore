@@ -11,6 +11,9 @@ out/
 *.log
 *.prof
 
+# Wi-Fi firmware (scripts/get_wlan_firmware.sh downloads it)
+firmware/wlan/
+
 # Toolchain and upstream sources (see README: pinned commits + patches/)
 tools/
 external/
