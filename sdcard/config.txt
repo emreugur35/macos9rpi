@@ -1,0 +1,28 @@
+# macos9rpi - Mac OS 9 on bare-metal Raspberry Pi Zero / Zero W
+#
+# The Raspberry Pi firmware reads this file before starting kernel.img.
+
+kernel=kernel.img
+arm_64bit=0
+
+# Memory reserved for the GPU (the 8-bit Mac screen needs very little)
+gpu_mem=64
+
+# Always enable HDMI output, even if the monitor is switched on later
+hdmi_force_hotplug=1
+disable_overscan=1
+disable_splash=1
+
+# Uncomment to force a specific HDMI mode (the Mac screen is scaled to it)
+#hdmi_group=2
+#hdmi_mode=9		# 800x600 60Hz
+#hdmi_mode=16		# 1024x768 60Hz
+
+# Overclock for a faster Mac: remove the # in front of the 5 lines below.
+# Most Pi Zero / Zero W boards run this fine with a small heatsink and a
+# good 5V/2A supply. If the Pi crashes or does not boot, put the # back.
+#arm_freq=1100
+#over_voltage=6
+#core_freq=500
+#sdram_freq=500
+#over_voltage_sdram=2

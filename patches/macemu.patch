@@ -1,0 +1,389 @@
+diff --git a/BasiliskII/src/timer.cpp b/BasiliskII/src/timer.cpp
+index 10af8f8..d5a8a0f 100644
+--- a/BasiliskII/src/timer.cpp
++++ b/BasiliskII/src/timer.cpp
+@@ -20,6 +20,10 @@
+ 
+ #include "sysdeps.h"
+ #include "timer.h"
++
++#ifndef PRECISE_TIMING_CIRCLE
++#define CIRCLE_TM_UPDATE()
++#endif
+ #include "macos_util.h"
+ #include "main.h"
+ #include "cpu_emulation.h"
+@@ -95,6 +99,18 @@ static CRITICAL_SECTION wakeup_time_lock;
+ static HANDLE timer_thread = NULL;
+ static DWORD WINAPI timer_func(void *arg);
+ #endif
++#if PRECISE_TIMING_CIRCLE
++// Bare-metal Raspberry Pi: a hardware timer fires at wakeup_time (IRQ context)
++#include "rpi_glue.h"
++static const tm_time_t wakeup_time_max = 0x7fffffffffffffffLL;
++static volatile tm_time_t wakeup_time = wakeup_time_max;
++static void circle_tm_irq(void)
++{
++	SetInterruptFlag(INTFLAG_TIMER);
++	TriggerInterrupt();
++}
++#define CIRCLE_TM_UPDATE() rpi_tm_set_wakeup(wakeup_time)
++#endif
+ #endif
+ 
+ 
+@@ -274,6 +290,12 @@ void TimerInit(void)
+ {
+ 	TimerReset();
+ 
++#if PRECISE_TIMING_CIRCLE
++	wakeup_time = wakeup_time_max;
++	rpi_tm_set_handler(circle_tm_irq);
++	rpi_tm_set_wakeup(wakeup_time);
++#endif
++
+ #if PRECISE_TIMING
+ 	// Start timer thread
+ #if PRECISE_TIMING_BEOS
+@@ -308,6 +330,10 @@ void TimerInit(void)
+ 
+ void TimerExit(void)
+ {
++#if PRECISE_TIMING_CIRCLE
++	rpi_tm_set_handler(NULL);
++	rpi_tm_set_wakeup(wakeup_time_max);
++#endif
+ #if PRECISE_TIMING
+ 	// Quit timer thread
+ #if PRECISE_TIMING_BEOS
+@@ -428,6 +454,7 @@ int16 RmvTime(uint32 tm)
+ 			if ((ReadMacInt16(d->task + qType) & 0x8000))
+ 				if (timer_cmp_time(d->wakeup, wakeup_time) < 0)
+ 					wakeup_time = d->wakeup;
++		CIRCLE_TM_UPDATE();
+ #endif
+ 
+ 		// Compute remaining time
+@@ -549,6 +576,7 @@ int16 PrimeTime(uint32 tm, int32 time)
+ 		if ((ReadMacInt16(d->task + qType) & 0x8000))
+ 			if (timer_cmp_time(d->wakeup, wakeup_time) < 0)
+ 				wakeup_time = d->wakeup;
++	CIRCLE_TM_UPDATE();
+ #if PRECISE_TIMING_BEOS
+ 	release_sem(wakeup_time_sem);
+ 	thread_info info;
+@@ -779,6 +807,7 @@ void TimerInterrupt(void)
+ 		if ((ReadMacInt16(d->task + qType) & 0x8000))
+ 			if (timer_cmp_time(d->wakeup, wakeup_time) < 0)
+ 				wakeup_time = d->wakeup;
++	CIRCLE_TM_UPDATE();
+ #if PRECISE_TIMING_BEOS
+ 	release_sem(wakeup_time_sem);
+ 	thread_info info;
+diff --git a/SheepShaver/src/emul_op.cpp b/SheepShaver/src/emul_op.cpp
+index d17415f..ac8d7c8 100644
+--- a/SheepShaver/src/emul_op.cpp
++++ b/SheepShaver/src/emul_op.cpp
+@@ -45,6 +45,8 @@
+ #include "name_registry.h"
+ #include "user_strings.h"
+ #include "emul_op.h"
++
++extern uint32 DRCacheAddr;
+ #include "thunks.h"
+ 
+ #define DEBUG 0
+@@ -296,14 +298,22 @@ void EmulOp(M68kRegisters *r, uint32 pc, int selector)
+ 			PlayStartupSound();
+ #endif
+ 			// Enable DR emulator (disabled for now)
++#ifdef CIRCLE_PORT
++			if (PrefsFindBool("jit68k") && DRCacheAddr) {	// DR areas are mapped by main_circle.cpp
++#else
+ 			if (PrefsFindBool("jit68k") && 0) {
++#endif
+ 				D(bug("DR activated\n"));
+ 				WriteMacInt32(KernelDataAddr + 0x17a0, 3);		// Prepare for DR emulator activation
+ 				WriteMacInt32(KernelDataAddr + 0x17c0, DR_CACHE_BASE);
+ 				WriteMacInt32(KernelDataAddr + 0x17c4, DR_CACHE_SIZE);
+ 				WriteMacInt32(KernelDataAddr + 0x1b04, DR_CACHE_BASE);
+ 				WriteMacInt32(KernelDataAddr + 0x1b00, DR_EMULATOR_BASE);
++#ifdef CIRCLE_PORT
++				Mac2Mac_memcpy(DR_EMULATOR_BASE, ROMBase + 0x370000, DR_EMULATOR_SIZE);
++#else
+ 				memcpy((void *)DR_EMULATOR_BASE, (void *)(ROMBase + 0x370000), DR_EMULATOR_SIZE);
++#endif
+ 				MakeExecutable(0, DR_EMULATOR_BASE, DR_EMULATOR_SIZE);
+ 			}
+ 			tick_inhibit = false;
+diff --git a/SheepShaver/src/gfxaccel.cpp b/SheepShaver/src/gfxaccel.cpp
+index ec1e96a..aba72f2 100644
+--- a/SheepShaver/src/gfxaccel.cpp
++++ b/SheepShaver/src/gfxaccel.cpp
+@@ -291,21 +291,32 @@ void NQD_fillrect(uint32 p)
+ 	}
+ }
+ 
++#ifdef CIRCLE_PORT
++// Statistics: installs, bitblt hook calls/accepted, fillrect hook calls/accepted, unknown hook calls
++uint32 nqd_stats[6];
++#define NQD_STAT(i) (nqd_stats[i]++)
++#else
++#define NQD_STAT(i)
++#endif
++
+ bool NQD_fillrect_hook(uint32 p)
+ {
+ 	D(bug("accl_fillrect_hook %08x\n", p));
+ 	NQD_set_dirty_area(p);
++	NQD_STAT(3);
+ 
+ 	// Check if we can accelerate this fillrect
+ 	if (ReadMacInt32(p + 0x284) != 0 && ReadMacInt32(p + acclDestPixelSize) >= 8) {
+ 		const int transfer_mode = ReadMacInt32(p + acclTransferMode);
+ 		if (transfer_mode == 8) {
+ 			// Fill
++			NQD_STAT(4);
+ 			WriteMacInt32(p + acclDrawProc, NativeTVECT(NATIVE_NQD_FILLRECT));
+ 			return true;
+ 		}
+ 		else if (transfer_mode == 10) {
+ 			// Invert
++			NQD_STAT(4);
+ 			WriteMacInt32(p + acclDrawProc, NativeTVECT(NATIVE_NQD_INVRECT));
+ 			return true;
+ 		}
+@@ -385,6 +396,7 @@ bool NQD_bitblt_hook(uint32 p)
+ {
+ 	D(bug("accl_draw_hook %08x\n", p));
+ 	NQD_set_dirty_area(p);
++	NQD_STAT(1);
+ 
+ 	// Check if we can accelerate this bitblt
+ 	if (ReadMacInt32(p + 0x018) + ReadMacInt32(p + 0x128) == 0 &&
+@@ -396,6 +408,7 @@ bool NQD_bitblt_hook(uint32 p)
+ 		(int32)ReadMacInt32(p + 0x15c) > 0) {
+ 
+ 		// Yes, set function pointer
++		NQD_STAT(2);
+ 		WriteMacInt32(p + acclDrawProc, NativeTVECT(NATIVE_NQD_BITBLT));
+ 		return true;
+ 	}
+@@ -407,6 +420,7 @@ bool NQD_unknown_hook(uint32 arg)
+ {
+ 	D(bug("accl_unknown_hook %08x\n", arg));
+ 	NQD_set_dirty_area(arg);
++	NQD_STAT(5);
+ 
+ 	return false;
+ }
+@@ -428,6 +442,7 @@ void VideoInstallAccel(void)
+ 	// Install acceleration hooks
+ 	if (PrefsFindBool("gfxaccel")) {
+ 		D(bug("Video: Installing acceleration hooks\n"));
++		NQD_STAT(0);
+ 		uint32 base;
+ 
+ 		SheepVar bitblt_hook_info(sizeof(accl_hook_info));
+diff --git a/SheepShaver/src/include/cpu_emulation.h b/SheepShaver/src/include/cpu_emulation.h
+index aa4b7a7..9367140 100644
+--- a/SheepShaver/src/include/cpu_emulation.h
++++ b/SheepShaver/src/include/cpu_emulation.h
+@@ -32,7 +32,7 @@ const uint32  ROM_AREA_SIZE = 0x500000;			// Size of ROM area
+ const uintptr DR_EMULATOR_BASE = 0x68070000;	// Address of DR emulator code
+ const uint32  DR_EMULATOR_SIZE = 0x10000;		// Size of DR emulator code
+ const uintptr DR_CACHE_BASE = 0x69000000;		// Address of DR cache
+-const uint32  DR_CACHE_SIZE = 0x80000;			// Size of DR Cache
++const uint32  DR_CACHE_SIZE = 0x400000;			// Size of DR Cache (macos9rpi: 4 MB)
+ 
+ const uintptr KERNEL_DATA_BASE = 0x68ffe000;	// Address of Kernel Data
+ const uintptr KERNEL_DATA2_BASE = 0x5fffe000;	// Alternate address of Kernel Data
+diff --git a/SheepShaver/src/kpx_cpu/sheepshaver_glue.cpp b/SheepShaver/src/kpx_cpu/sheepshaver_glue.cpp
+index 7f85792..0de5f9b 100755
+--- a/SheepShaver/src/kpx_cpu/sheepshaver_glue.cpp
++++ b/SheepShaver/src/kpx_cpu/sheepshaver_glue.cpp
+@@ -29,6 +29,9 @@
+ #include "block-alloc.hpp"
+ #include "sigsegv.h"
+ #include "cpu/ppc/ppc-cpu.hpp"
++#ifdef CIRCLE_PORT
++#include "ppc_armjit.h"
++#endif
+ #include "cpu/ppc/ppc-operations.hpp"
+ #include "cpu/ppc/ppc-instructions.hpp"
+ #include "thunks.h"
+@@ -179,6 +182,12 @@ public:
+ 
+ 	// Make sure the SIGSEGV handler can access CPU registers
+ 	friend sigsegv_return_t sigsegv_handler(sigsegv_info_t *sip);
++
++#ifdef CIRCLE_PORT
++	// Sampling profiler support (read from IRQ context)
++	uint32 profile_pc() { return pc(); }
++	uint32 profile_gpr(int i) { return gpr(i); }
++#endif
+ };
+ 
+ sheepshaver_cpu::sheepshaver_cpu()
+@@ -725,6 +734,19 @@ inline void sheepshaver_cpu::get_resource(uint32 old_get_resource)
+ // PowerPC CPU emulator
+ static sheepshaver_cpu *ppc_cpu = NULL;
+ 
++#ifdef CIRCLE_PORT
++// Sampling profiler: current PowerPC pc and r24 (68k pc in the ROM's 68k emulator)
++extern "C" int PPCProfileSample(uint32 *pc, uint32 *r24)
++{
++	sheepshaver_cpu *cpu = ppc_cpu;
++	if (cpu == NULL)
++		return 0;
++	*pc = cpu->profile_pc();
++	*r24 = cpu->profile_gpr(24);
++	return 1;
++}
++#endif
++
+ void FlushCodeCache(uintptr start, uintptr end)
+ {
+ 	D(bug("FlushCodeCache(%08x, %08x)\n", start, end));
+@@ -848,6 +870,9 @@ void init_emul_ppc(void)
+ 
+ 	// Initialize main CPU emulator
+ 	ppc_cpu = new sheepshaver_cpu();
++#ifdef CIRCLE_PORT
++	ppc_armjit::attach(ppc_cpu, PrefsFindBool("jit"), PrefsFindBool("jitprofile"), PrefsFindBool("jitsample"));
++#endif
+ 	ppc_cpu->set_register(powerpc_registers::GPR(3), any_register((uint32)ROMBase + 0x30d000));
+ 	ppc_cpu->set_register(powerpc_registers::GPR(4), any_register(KernelDataAddr + 0x1000));
+ 	WriteMacInt32(XLM_RUN_MODE, MODE_68K);
+@@ -896,9 +921,20 @@ void exit_emul_ppc(void)
+ #endif
+ 
+ 	delete ppc_cpu;
++#ifdef CIRCLE_PORT
++	ppc_armjit::detach();
++#endif
+ 	ppc_cpu = NULL;
+ }
+ 
++#ifdef CIRCLE_PORT
++// Compare the ARM translator against the interpreter (returns mismatches)
++int PPCJitSelfTest(uint32 scratch, int iterations)
++{
++	return ppc_armjit::selftest(ppc_cpu, scratch, iterations);
++}
++#endif
++
+ #if PPC_ENABLE_JIT && PPC_REENTRANT_JIT
+ // Initialize EmulOp trampolines
+ void init_emul_op_trampolines(basic_dyngen & dg)
+@@ -960,6 +996,10 @@ void HandleInterrupt(powerpc_registers *r)
+ 	// We must fill in the events queue in the same thread that did call SDL_SetVideoMode()
+ 	SDL_PumpEvents();
+ #endif
++#ifdef CIRCLE_PORT
++	// Bare-metal Raspberry Pi: USB input, clock, NVRAM (main context)
++	CirclePollEvents();
++#endif
+ 
+ 	// Do nothing if interrupts are disabled
+ 	if (int32(ReadMacInt32(XLM_IRQ_NEST)) > 0)
+diff --git a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.cpp b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.cpp
+index 39a31ec..dcc12ee 100644
+--- a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.cpp
++++ b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.cpp
+@@ -24,6 +24,9 @@
+ #include "vm_alloc.h"
+ #include "cpu/vm.hpp"
+ #include "cpu/ppc/ppc-cpu.hpp"
++#ifdef CIRCLE_PORT
++#include "ppc_armjit.h"
++#endif
+ #ifndef SHEEPSHAVER
+ #include "basic-kernel.hpp"
+ #endif
+@@ -580,6 +583,10 @@ void powerpc_cpu::execute(uint32 entry)
+ 	const bool dump_state = true;
+ #endif
+ 	execute_depth++;
++#ifdef CIRCLE_PORT
++	if (ppc_armjit::active && ppc_armjit::run(this, invalidated_cache))
++		goto return_site;
++#endif
+ #if PPC_DECODE_CACHE || PPC_ENABLE_JIT
+ 	if (execute_depth == 1 || (PPC_ENABLE_JIT && PPC_REENTRANT_JIT)) {
+ #if PPC_ENABLE_JIT
+@@ -789,6 +796,9 @@ void powerpc_cpu::kill_decode_cache()
+ void powerpc_cpu::invalidate_cache()
+ {
+ 	D(bug("Invalidate all cache blocks\n"));
++#ifdef CIRCLE_PORT
++	ppc_armjit::invalidate_all();
++#endif
+ #if PPC_DECODE_CACHE || PPC_ENABLE_JIT
+ 	my_block_cache.clear();
+ 	my_block_cache.initialize();
+@@ -824,6 +834,9 @@ void powerpc_block_info::invalidate()
+ void powerpc_cpu::invalidate_cache_range(uintptr start, uintptr end)
+ {
+ 	D(bug("Invalidate cache block [%08x - %08x]\n", start, end));
++#ifdef CIRCLE_PORT
++	ppc_armjit::invalidate_range(start, end);
++#endif
+ #if PPC_DECODE_CACHE || PPC_ENABLE_JIT
+ #if DYNGEN_DIRECT_BLOCK_CHAINING
+ 	if (use_jit) {
+diff --git a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.hpp b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.hpp
+index f1739a5..4cd5b57 100644
+--- a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.hpp
++++ b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.hpp
+@@ -249,6 +249,11 @@ private:
+ 	// Current execute() nested level
+ 	int execute_depth;
+ 
++#ifdef CIRCLE_PORT
++	// ARMv6 dynamic translator (macos9rpi)
++	friend class ppc_armjit;
++#endif
++
+ public:
+ 
+ 	// Initialization & finalization
+diff --git a/SheepShaver/src/kpx_cpu/src/cpu/spcflags.hpp b/SheepShaver/src/kpx_cpu/src/cpu/spcflags.hpp
+index d379f1c..aaa0b28 100644
+--- a/SheepShaver/src/kpx_cpu/src/cpu/spcflags.hpp
++++ b/SheepShaver/src/kpx_cpu/src/cpu/spcflags.hpp
+@@ -46,6 +46,26 @@ public:
+ 	void init()
+ 		{ mask = 0; lock = SPIN_LOCK_UNLOCKED; }
+ 
++#ifdef CIRCLE_PORT
++	// set() is called from IRQ context on the bare-metal port: use atomics
++	bool empty() const
++		{ return (__atomic_load_n(&mask, __ATOMIC_RELAXED) == 0); }
++
++	bool test(uint32 v) const
++		{ return (__atomic_load_n(&mask, __ATOMIC_RELAXED) & v); }
++
++	void init(uint32 v)
++		{ __atomic_store_n(&mask, v, __ATOMIC_SEQ_CST); }
++
++	uint32 get() const
++		{ return __atomic_load_n(&mask, __ATOMIC_RELAXED); }
++
++	void set(uint32 v)
++		{ __atomic_fetch_or(&mask, v, __ATOMIC_SEQ_CST); }
++
++	void clear(uint32 v)
++		{ __atomic_fetch_and(&mask, ~v, __ATOMIC_SEQ_CST); }
++#else
+ 	bool empty() const
+ 		{ return (mask == 0); }
+ 
+@@ -63,6 +83,7 @@ public:
+ 
+ 	void clear(uint32 v)
+ 		{ spin_lock(&lock); mask &= ~v; spin_unlock(&lock); }
++#endif
+ };
+ 
+ #endif /* SPCFLAGS_H */

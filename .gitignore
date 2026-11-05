@@ -1,0 +1,21 @@
+# Copyrighted Apple material: never commit
+*.dsk
+*.rom
+*.rom.zip
+Mac OS ROM
+
+# Build output and generated SD images
+build/
+out/
+*.img
+*.log
+*.prof
+
+# Toolchain and upstream sources (see README: pinned commits + patches/)
+tools/
+external/
+
+# Local / editor
+.DS_Store
+.claude/
+.vscode/

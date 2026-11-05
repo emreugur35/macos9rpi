@@ -1,0 +1,39 @@
+diff --git a/addon/fatfs/ffconf.h b/addon/fatfs/ffconf.h
+index 9011a9a8..0c0977f3 100644
+--- a/addon/fatfs/ffconf.h
++++ b/addon/fatfs/ffconf.h
+@@ -34,7 +34,7 @@
+ /* This option switches f_mkfs(). (0:Disable or 1:Enable) */
+ 
+ 
+-#define FF_USE_FASTSEEK	0
++#define FF_USE_FASTSEEK	1
+ /* This option switches fast seek feature. (0:Disable or 1:Enable) */
+ 
+ 
+diff --git a/include/circle/sysconfig.h b/include/circle/sysconfig.h
+index 566e6eb7..857935a6 100644
+--- a/include/circle/sysconfig.h
++++ b/include/circle/sysconfig.h
+@@ -467,7 +467,7 @@
+ // GNU-C 12.x uses floating point registers for optimization. This may
+ // occur anywhere in the code, even in IRQ and FIQ handlers.
+ 
+-#if RASPPI >= 2 && __GNUC__ >= 12
++#if __GNUC__ >= 12
+ 
+ #ifndef SAVE_VFP_REGS_ON_IRQ
+ #define SAVE_VFP_REGS_ON_IRQ
+@@ -477,10 +477,12 @@
+ #define SAVE_VFP_REGS_ON_FIQ
+ #endif
+ 
++#if RASPPI >= 2
+ // save all VFP regs in exceptionstub.S
+ #ifndef __FAST_MATH__
+ #define __FAST_MATH__
+ #endif
++#endif
+ 
+ #endif
+ 

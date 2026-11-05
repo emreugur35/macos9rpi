@@ -1,0 +1,44 @@
+# macos9rpi settings (SheepShaver preferences format: "keyword value")
+# Lines starting with # are comments.
+
+# Mac ROM file on this partition. Copy the ROM you use with SheepShaver
+# here and name it "Mac OS ROM" (New World ROM from a Mac OS 9 CD) or
+# point this line to it (e.g. a 4 MB Old World ROM dump).
+rom Mac OS ROM
+
+# Mac hard disk:
+#   sd:p2          = raw disk image written into partition 2 of this SD card
+#   something.dsk  = disk image file on this FAT partition (max. 4 GB)
+# If no disk line is given, sd:p2 and image files in the root
+# directory (.dsk .img .hfv .hda) are used automatically.
+disk sd:p2
+
+# CD-ROM image (e.g. a Mac OS 9 install CD) on this partition
+#cdrom MacOS9.iso
+
+# Mac RAM in MB (16 .. 384)
+ramsize 128
+
+# Disk read cache in the Pi's RAM, in MB (0 = off). Speeds up booting a lot,
+# because SD cards are slow at many small reads.
+diskcache 32
+
+# Screen size (Mac OS uses 256 colors, the GPU scales it to your monitor).
+# 640x480 draws noticeably faster than 800x600.
+screen 800x600
+
+# Mouse speed in percent
+mousespeed 100
+
+# PowerPC to ARM translator (JIT): several times faster than the
+# interpreter. It checks itself against the interpreter at every start and
+# switches itself off if anything does not match. If Mac OS misbehaves,
+# set this to false to use the (slow) interpreter.
+jit true
+
+# Keyboard: false = Alt is Command, Windows key is Option (like a Mac
+# keyboard layout); true = swapped
+swap_opt_cmd false
+
+# Boot from CD-ROM instead of the hard disk: bootdriver -62
+#bootdriver -62
