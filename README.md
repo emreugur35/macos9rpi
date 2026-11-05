@@ -180,3 +180,16 @@ make -j8
 - In QEMU, USB mouse movement does not reach Circle (known QEMU/Circle
   limitation; buttons and keyboard work). This is not a problem on real
   hardware.
+
+## Contributing
+
+Contributions are welcome! Bug reports, test results on real hardware, fixes
+and new features (sound, networking, more colors, speed) are all appreciated.
+Please open an issue or a pull request.
+
+- When reporting a problem, attach `macos9rpi.log` from the SD card's FAT
+  partition and say which Pi, ROM and Mac OS version you used.
+- If you can, test changes in QEMU (`scripts/run_qemu.sh`) and on a real Pi.
+- Changes to Circle or SheepShaver go into `patches/` as an updated diff
+  against the pinned commits.
+- Never include Mac ROMs or Mac OS disk images in issues or pull requests.
